@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hum Canceller</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}*,*::before,*::after{box-sizing:border-box}[hidden]{display:none!important}
+/* Layout: one narrow instrument column — learn the hum, then tune the anti-wave */
+:root{
+  --bg:#EEF1F4; --surface:#FFFFFF; --ink:#16202A; --muted:#566370; --line:#D3DAE1;
+  --accent:#2B57CF; --accent-ink:#FFFFFF; --accent-soft:#E3EAFB; --warn:#A94E14;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D1116; --surface:#151B22; --ink:#E4E9EE; --muted:#93A0AC; --line:#28313B;
+  --accent:#7FA3FF; --accent-ink:#0D1116; --accent-soft:#1C2740; --warn:#F2A46A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D1116; --surface:#151B22; --ink:#E4E9EE; --muted:#93A0AC; --line:#28313B;
+  --accent:#7FA3FF; --accent-ink:#0D1116; --accent-soft:#1C2740; --warn:#F2A46A; color-scheme:dark}
+
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.55}
+.wrap{max-width:760px;margin:0 auto;padding-block:28px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:30px}
+h1,h2{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.15}
+h1{font-size:2.1rem;font-weight:700;letter-spacing:-.01em}
+h2{font-size:1.25rem;font-weight:600}
+h2 .n{font-family:var(--mono);font-weight:500;color:var(--accent);margin-right:8px}
+p{margin:0;max-width:65ch}
+.lede{color:var(--muted)}
+.label{font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:600}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+section{display:flex;flex-direction:column;gap:14px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:16px;min-width:0}
+
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 12px;font-weight:500}
+.btn:hover{border-color:var(--accent)}
+.btn-primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600;padding:12px 20px;font-size:1rem}
+.btn-primary:hover{filter:brightness(1.07)}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.file-btn{position:relative;overflow:hidden}
+.file-btn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+
+.meter{height:8px;border-radius:999px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+.meter span{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+.msg{font-size:.88rem;color:var(--muted)}
+.msg.example,.msg.err{color:var(--warn)}
+
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.stat{display:flex;flex-direction:column;gap:2px;min-width:0}
+.stat .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:1.35rem;font-weight:500}
+.stat .s{font-size:.8rem;color:var(--muted)}
+.plots{display:grid;grid-template-columns:3fr 2fr;gap:12px}
+.plot{display:flex;flex-direction:column;gap:6px;min-width:0}
+.plot-box{border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow:hidden}
+canvas{display:block;width:100%;height:150px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;color:var(--muted)}
+.sw{display:inline-block;width:16px;height:0;border-top:2px solid var(--ink);vertical-align:middle;margin-right:6px}
+.sw.anti{border-top:2px dashed var(--accent)}
+
+.transport{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.status{display:inline-flex;align-items:center;gap:8px;font-size:.85rem;color:var(--muted)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.status.on .dot{background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.status.on{color:var(--ink)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;align-self:flex-start;max-width:100%}
+.seg button{border:none;background:transparent;padding:8px 14px;font-size:.9rem;font-weight:500;border-left:1px solid var(--line)}
+.seg button:first-child{border-left:none}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.live{display:flex;flex-direction:column;gap:12px;border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--bg)}
+.live-opts{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.check{display:inline-flex;align-items:center;gap:6px;font-size:.88rem}
+.check input{accent-color:var(--accent);width:16px;height:16px}
+.nudges.locked .nudge{opacity:.4;pointer-events:none}
+input[type=range]{width:100%;accent-color:var(--accent);margin:0}
+.row{display:flex;flex-direction:column;gap:6px}
+.row-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.readout{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.nudges{display:flex;flex-wrap:wrap;gap:6px}
+.nudge{font-family:var(--mono);font-size:.8rem;border:1px solid var(--line);background:transparent;border-radius:6px;padding:5px 8px;min-width:48px}
+.nudge:hover{border-color:var(--accent);color:var(--accent)}
+
+ol.steps{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:10px;max-width:65ch}
+ol.steps li::marker{font-family:var(--mono);color:var(--accent)}
+ol.steps b{font-weight:600}
+.note{border-left:3px solid var(--warn);padding:4px 0 4px 12px;color:var(--muted);font-size:.9rem;max-width:65ch}
+ul.limits{margin:0;padding-left:1.2em;color:var(--muted);display:flex;flex-direction:column;gap:6px;max-width:65ch}
+@media (max-width:560px){.plots{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}h1{font-size:1.75rem}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header style="display:flex;flex-direction:column;gap:8px">
+    <h1>Hum Canceller</h1>
+    <p class="lede">Listens to the noise, learns the exact shape of its repeating hum, then plays that shape inverted through your headphones. It cancels the steady, repeating part of a noise. Voices, traffic and random whoosh can't be predicted, so they stay.</p>
+  </header>
+
+  <section aria-label="Learn the noise">
+    <h2><span class="n">1</span>Learn the noise</h2>
+    <div class="panel">
+      <p class="lede">Take your headphones off, keep quiet, and hold the phone near where your head will be.</p>
+      <div class="bar">
+        <button class="btn btn-primary" id="listenBtn">Listen</button>
+        <select id="dur" aria-label="Listening time">
+          <option value="5">5 seconds</option>
+          <option value="10" selected>10 seconds</option>
+          <option value="20">20 seconds</option>
+        </select>
+        <label class="btn file-btn" for="rec">Open recording<input type="file" id="rec" accept="audio/*,.m4a,.mp3,.wav,.aac,.ogg,.opus,.webm"></label>
+        <button class="btn" id="exampleBtn">Load example</button>
+      </div>
+      <div class="meter" aria-hidden="true"><span id="meter"></span></div>
+      <p class="msg" id="msg">Analyzing…</p>
+
+      <div class="stats">
+        <div class="stat"><span class="label">Hum pitch</span><span class="v" id="sF0">–</span><span class="s">fundamental</span></div>
+        <div class="stat"><span class="label">Cancellable</span><span class="v" id="sPer">–</span><span class="s">of the noise repeats</span></div>
+        <div class="stat"><span class="label">Overtones</span><span class="v" id="sH">–</span><span class="s">above −30 dB</span></div>
+      </div>
+
+      <div class="plots">
+        <div class="plot">
+          <span class="label">Two cycles of the hum</span>
+          <div class="plot-box"><canvas id="wave" aria-label="Learned hum waveform and anti-wave"></canvas></div>
+          <div class="legend"><span><i class="sw"></i>Learned hum</span><span><i class="sw anti"></i>Anti-wave you'll hear</span></div>
+        </div>
+        <div class="plot">
+          <span class="label">Overtones (harmonics)</span>
+          <div class="plot-box"><canvas id="harm" aria-label="Strength of each harmonic"></canvas></div>
+          <div class="legend"><span>Filled bars are included in the anti-wave</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="Cancel">
+    <h2><span class="n">2</span>Cancel it</h2>
+    <div class="panel">
+      <div class="row">
+        <span class="label">Mode</span>
+        <div class="seg" id="mode" role="group" aria-label="Cancelling mode">
+          <button data-mode="fixed" aria-pressed="true">Learned wave</button>
+          <button data-mode="live" aria-pressed="false">Live tracking (ANC)</button>
+        </div>
+        <p class="msg" id="modeNote">Plays the learned hum shape, inverted. You keep pitch and timing tuned by hand.</p>
+      </div>
+      <div class="live" id="livePanel" hidden>
+        <div class="stats">
+          <div class="stat"><span class="label">Tracked pitch</span><span class="v" id="lF">–</span><span class="s">follows drift</span></div>
+          <div class="stat"><span class="label">Lock</span><span class="v" id="lFit">–</span><span class="s">of mic sound modeled</span></div>
+          <div class="stat"><span class="label">Hum at mic</span><span class="v" id="lLvl">–</span><span class="s">dBFS</span></div>
+        </div>
+        <div class="live-opts">
+          <label class="check" for="speed">Tracking speed
+            <select id="speed"><option value="2">Steady</option><option value="0.5" selected>Normal</option><option value="0.15">Fast</option></select></label>
+          <label class="check"><input type="checkbox" id="freeze">Hold current shape</label>
+        </div>
+      </div>
+      <div class="transport">
+        <button class="btn btn-primary" id="startBtn">Start anti-wave</button>
+        <button class="btn" id="compareBtn" disabled>Hold to compare</button>
+        <span class="status" id="status"><span class="dot"></span><span id="statusText">Stopped</span></span>
+      </div>
+      <div class="row">
+        <div class="row-head"><span class="label">Master volume</span><span class="readout" id="masterOut">60%</span></div>
+        <input type="range" id="master" min="0" max="100" step="1" value="60" aria-label="Master volume">
+      </div>
+      <div class="row">
+        <div class="row-head"><span class="label">Level</span><span class="readout" id="levelOut">−30.0 dB</span></div>
+        <input type="range" id="level" min="-60" max="-6" step="0.5" value="-30" aria-label="Anti-wave level">
+        <div class="nudges" data-k="level"><button class="nudge" data-d="-3">−3 dB</button><button class="nudge" data-d="-1">−1 dB</button><button class="nudge" data-d="1">+1 dB</button><button class="nudge" data-d="3">+3 dB</button></div>
+      </div>
+      <div class="row">
+        <div class="row-head"><span class="label">Timing (phase)</span><span class="readout" id="phaseOut">0.0° · 0.00 ms</span></div>
+        <input type="range" id="phase" min="0" max="360" step="0.2" value="0" aria-label="Anti-wave timing">
+        <div class="nudges" data-k="phase"><button class="nudge" data-d="-10">−10°</button><button class="nudge" data-d="-1">−1°</button><button class="nudge" data-d="-0.2">−0.2°</button><button class="nudge" data-d="0.2">+0.2°</button><button class="nudge" data-d="1">+1°</button><button class="nudge" data-d="10">+10°</button></div>
+      </div>
+      <div class="row">
+        <div class="row-head"><span class="label">Pitch</span><span class="readout" id="freqOut">50.000 Hz</span></div>
+        <div class="nudges" data-k="freq"><button class="nudge" data-d="-0.1">−0.1</button><button class="nudge" data-d="-0.01">−0.01</button><button class="nudge" data-d="-0.002">−0.002</button><button class="nudge" data-d="0.002">+0.002</button><button class="nudge" data-d="0.01">+0.01</button><button class="nudge" data-d="0.1">+0.1</button></div>
+      </div>
+      <div class="row">
+        <div class="row-head"><span class="label">Overtones used</span><span class="readout" id="harmOut">–</span></div>
+        <input type="range" id="harmN" min="1" max="24" step="1" value="4" aria-label="Number of overtones in the anti-wave">
+      </div>
+      <p class="note">Start with the volume low. The anti-wave only needs to be about as loud as the hum.</p>
+    </div>
+  </section>
+
+  <section aria-label="How to tune">
+    <h2>How to tune it</h2>
+    <ol class="steps">
+      <li><b>Learn the noise</b> with your headphones off. Check the Cancellable figure. Above about 60% is a good sign. Below 30% means most of the noise is random and this won't help much.</li>
+      <li><b>Put on wired headphones</b> and press Start. Raise the level until the anti-wave is about as loud as the hum.</li>
+      <li><b>Sweep Timing</b> slowly. At one point the hum dips. Then go back and forth between Timing and Level for the deepest dip.</li>
+      <li><b>If you hear a slow wobble</b> or the hum creeps back, the pitch is slightly off. Nudge Pitch by 0.01 or 0.002 Hz until it holds still, then fix Timing again.</li>
+      <li><b>Try fewer overtones</b> if it sounds buzzy or the dip is shallow. Headphone cups block high overtones, so the fundamental alone often works best.</li>
+      <li><b>Hold "Hold to compare"</b> to hear the hum without the anti-wave.</li>
+      <li><b>Switch to Live tracking</b> once it works. The mic keeps listening while you wear the headphones, so the anti-wave follows the hum's pitch and loudness by itself. It also adds the device's audio delay for you. Keep the phone a little away from your headphones, sweep Timing once more, and leave it running.</li>
+      <li><b>If Live tracking wobbles</b>, set Tracking speed to Steady or tick "Hold current shape". That happens when the mic picks up the anti-wave from your headphones.</li>
+    </ol>
+  </section>
+
+  <section aria-label="Limits">
+    <h2>What to expect</h2>
+    <ul class="limits">
+      <li>The mic hears the room, not your ear, so it can learn the hum's shape and pitch but not its exact timing at your ear. That's why you tune Timing by ear.</li>
+      <li>Learned wave mode needs retuning when a mains hum drifts. Live tracking follows the drift itself.</li>
+      <li>Live tracking predicts the hum ahead to cover the delay, so it still only works on the repeating part. A real ANC headphone reacts to every sound within microseconds; a phone can't.</li>
+      <li>Stopping keeps the tuning. Reloading the page loses Timing.</li>
+      <li>Use wired headphones or earbuds. Phone speakers can't play low hums, and Bluetooth delay can drift.</li>
+      <li>On iPhone, turn off silent mode or you won't hear the anti-wave.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
+  const S = { model:null, freq:50, phase:0, level:-30, K:4, playing:false, master:0.6, mode:"fixed", tau:0.5, freeze:false };
+
+  // ---------- Audio output ----------
+  let ctx=null, masterG=null, osc=null, toneG=null, comparing=false, wakeLock=null;
+  function ensureCtx(){
+    if (ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    ctx = new AC();
+    masterG = ctx.createGain(); masterG.gain.value = 0; masterG.connect(ctx.destination);
+    toneG = ctx.createGain(); toneG.gain.value = Math.pow(10,S.level/20); toneG.connect(masterG);
+    osc = ctx.createOscillator(); osc.frequency.value = S.freq;
+    osc.setPeriodicWave(makeWave()); osc.connect(toneG); osc.start();
+  }
+  // Anti-wave coefficients: -W(theta + 2*pi*p), first K harmonics, scaled so the learned peak = 1
+  function antiCoeffs(){
+    const m = S.model, K = Math.min(S.K, m.a.length-1);
+    const re = new Float32Array(K+1), im = new Float32Array(K+1);
+    const d = S.phase*Math.PI/180;
+    for (let h=1; h<=K; h++){
+      const a=m.a[h], b=m.b[h], c=Math.cos(h*d), s=Math.sin(h*d);
+      re[h] = -(a*c + b*s)/m.peak;
+      im[h] = -(b*c - a*s)/m.peak;
+    }
+    return {re, im};
+  }
+  function makeWave(){ const {re,im} = antiCoeffs(); return ctx.createPeriodicWave(re, im, {disableNormalization:true}); }
+  function refreshWave(){ if (osc) osc.setPeriodicWave(makeWave()); drawWave(); }
+  function applyMaster(){ if (!ctx) return; masterG.gain.setTargetAtTime((S.playing && !comparing) ? S.master*0.5 : 0, ctx.currentTime, 0.03); }
+
+  function setFreq(f){ S.freq = Math.round(clamp(f,15,1000)*1000)/1000; if (osc) osc.frequency.setTargetAtTime(S.freq, ctx.currentTime, 0.01); syncUI(); }
+  function setPhase(p){ S.phase = ((p%360)+360)%360; refreshWave(); sendLive(); syncUI(); }
+  function setLevel(l){ S.level = clamp(l,-60,-6); applyToneGain(); sendLive(); syncUI(); }
+  function setK(k){ S.K = clamp(Math.round(k),1,S.model.a.length-1); refreshWave(); drawHarm(); sendLive(); syncUI(); }
+  function applyToneGain(){ if (toneG) toneG.gain.setTargetAtTime(S.mode==="fixed" ? Math.pow(10,S.level/20) : 0, ctx.currentTime, 0.02); }
+
+  // ---------- Live tracking ANC ----------
+  // Runs on the audio thread. Models the mic signal as a sum of harmonics of a tracked pitch
+  // (LMS per harmonic + frequency-locked loop), then outputs that model inverted and shifted
+  // ahead by the device's audio delay plus the user's Timing offset.
+  const CORE = `
+  class HumCore {
+    constructor(sr){
+      this.sr=sr; this.KM=8; this.K=4; this.f=50; this.f0=50; this.hs=1; this.th=0;
+      this.a=new Float64Array(33); this.b=new Float64Array(33);
+      this.zr=new Float64Array(33); this.zi=new Float64Array(33);
+      this.wr=new Float64Array(33); this.wi=new Float64Array(33);
+      this.timing=0; this.lat=0; this.levelLin=0.03; this.tau=0.5; this.freeze=false;
+      this.px=1e-12; this.pe=1e-12; this.prevPsi=null; this.n=0; this.ref=0; this.calAt=1.2;
+    }
+    set(p){
+      if (p.type==="init"){
+        this.f=this.f0=p.f; this.hs=p.hs; this.KM=Math.min(32,p.KM); this.th=0;
+        this.a.fill(0); this.b.fill(0); this.prevPsi=null; this.n=0; this.ref=0; this.px=1e-12; this.pe=1e-12;
+        return;
+      }
+      for (const k of ["K","timing","lat","levelLin","tau","freeze"]) if (p[k]!==undefined) this[k]=p[k];
+      this.K=Math.max(1,Math.min(this.K,this.KM));
+    }
+    process(x, y, n){
+      const KM=this.KM, K=this.K, a=this.a, b=this.b, zr=this.zr, zi=this.zi, wr=this.wr, wi=this.wi;
+      const TAU=6.283185307179586;
+      const d=TAU*(this.timing + this.lat*this.f), dc=Math.cos(d), ds=Math.sin(d);
+      wr[1]=dc; wi[1]=ds;
+      for (let h=2; h<=K; h++){ wr[h]=wr[h-1]*dc-wi[h-1]*ds; wi[h]=wr[h-1]*ds+wi[h-1]*dc; }
+      const mu=this.freeze?0:2/(this.sr*this.tau);
+      const g=this.ref>0 ? this.levelLin/this.ref : 0;
+      const step=this.f/this.sr;
+      let th=this.th, px=this.px, pe=this.pe;
+      for (let i=0;i<n;i++){
+        const t=TAU*th, c1=Math.cos(t), s1=Math.sin(t);
+        zr[1]=c1; zi[1]=s1;
+        for (let h=2; h<=KM; h++){ zr[h]=zr[h-1]*c1-zi[h-1]*s1; zi[h]=zr[h-1]*s1+zi[h-1]*c1; }
+        let m=0; for (let h=1; h<=KM; h++) m+=a[h]*zr[h]+b[h]*zi[h];
+        const xi = x ? x[i] : 0, e = xi - m;
+        if (mu){ const me=mu*e; for (let h=1; h<=KM; h++){ a[h]+=me*zr[h]; b[h]+=me*zi[h]; } }
+        let o=0;
+        for (let h=1; h<=K; h++) o += a[h]*(zr[h]*wr[h]-zi[h]*wi[h]) + b[h]*(zr[h]*wi[h]+zi[h]*wr[h]);
+        let v=-g*o; v = v>0.9?0.9:(v<-0.9?-0.9:v); y[i]=v;
+        px+=0.0005*(xi*xi-px); pe+=0.0005*(e*e-pe);
+        th+=step; if (th>=1) th-=1;
+      }
+      this.th=th; this.px=px; this.pe=pe; this.n+=n;
+      // Frequency-locked loop on the strongest harmonic: a rotating phasor means the pitch is off
+      if (!this.freeze){
+        const h=this.hs, psi=Math.atan2(b[h],a[h]), R=Math.hypot(a[h],b[h]);
+        if (this.prevPsi!==null && R>1e-7){
+          let dp=psi-this.prevPsi; if (dp>Math.PI) dp-=TAU; else if (dp<-Math.PI) dp+=TAU;
+          const dt=n/this.sr, df=-dp/(TAU*h*dt), kf=dt/(3*this.tau);
+          this.f=Math.min(this.f0+3, Math.max(this.f0-3, this.f+kf*df));
+        }
+        this.prevPsi=psi;
+      }
+      // Calibrate output scale once the model has settled, so Level means the same as in learned mode
+      if (!this.ref && this.n > this.calAt*this.sr){
+        let pk=0; for (let h=1; h<=KM; h++) pk+=Math.hypot(a[h],b[h]);
+        if (pk>1e-6) this.ref=pk;
+      }
+    }
+    stats(){ return { f:this.f, fit:Math.max(0,1-this.pe/this.px), lvl:10*Math.log10(this.px+1e-12), ready:this.ref>0 }; }
+  }`;
+  const WORKLET = CORE + `
+  class HumANC extends AudioWorkletProcessor {
+    constructor(){ super(); this.c=new HumCore(sampleRate); this.k=0; this.port.onmessage=e=>this.c.set(e.data); }
+    process(ins, outs){
+      const x = ins[0] && ins[0].length ? ins[0][0] : null, y = outs[0][0];
+      this.c.process(x, y, y.length);
+      for (let ch=1; ch<outs[0].length; ch++) outs[0][ch].set(y);
+      if (++this.k % 30 === 0) this.port.postMessage(this.c.stats());
+      return true;
+    }
+  }
+  registerProcessor("hum-anc", HumANC);`;
+
+  let live = null;
+  async function startLive(){
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      showMsg("Live tracking needs the microphone, which only works on an https:// page or a file opened on a laptop.", "err"); return false;
+    }
+    let stream;
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1, latency:0 } });
+    }catch(err){
+      showMsg(err && err.name==="NotAllowedError" ? "Microphone access was blocked. Allow it in your browser's site settings to use Live tracking." : "Couldn't open the microphone for Live tracking.", "err");
+      return false;
+    }
+    ensureCtx(); try{ await ctx.resume(); }catch(e){}
+    applyToneGain();
+    const src = ctx.createMediaStreamSource(stream);
+    const out = ctx.createGain(); out.connect(masterG);
+    let node, post, extra = 0;
+    try{
+      if (!ctx.audioWorklet) throw new Error("no worklet");
+      const url = URL.createObjectURL(new Blob([WORKLET], {type:"application/javascript"}));
+      await ctx.audioWorklet.addModule(url); URL.revokeObjectURL(url);
+      node = new AudioWorkletNode(ctx, "hum-anc", { numberOfInputs:1, numberOfOutputs:1, outputChannelCount:[1] });
+      node.port.onmessage = e=>showLive(e.data);
+      post = m=>node.port.postMessage(m);
+      extra = 128/ctx.sampleRate;
+    }catch(e){
+      // Fallback for browsers without AudioWorklet: same core on a ScriptProcessor (more delay, still compensated)
+      const Core = new Function(CORE + "; return HumCore;")();
+      const core = new Core(ctx.sampleRate), BS = 1024; let k = 0;
+      node = ctx.createScriptProcessor(BS, 1, 1);
+      node.onaudioprocess = ev=>{ const y=ev.outputBuffer.getChannelData(0); core.process(ev.inputBuffer.getChannelData(0), y, y.length); if (++k%4===0) showLive(core.stats()); };
+      post = m=>core.set(m);
+      extra = 2*BS/ctx.sampleRate;
+    }
+    src.connect(node); node.connect(out);
+    const trackLat = (stream.getAudioTracks()[0].getSettings() || {}).latency || 0.01;
+    const lat = (ctx.baseLatency||0) + (ctx.outputLatency||0) + trackLat + extra;
+    live = { stream, src, node, out, post, lat };
+    const m = S.model;
+    post({ type:"init", f:S.freq, hs:m.hs, KM:Math.min(32, m.a.length-1) });
+    sendLive();
+    return true;
+  }
+  function stopLive(){
+    if (!live) return;
+    try{ live.src.disconnect(); live.node.disconnect(); live.out.disconnect(); }catch(e){}
+    live.stream.getTracks().forEach(t=>t.stop());
+    live = null;
+  }
+  function sendLive(){
+    if (!live) return;
+    live.post({ K:S.K, timing:S.phase/360, lat:live.lat, levelLin:Math.pow(10,S.level/20), tau:S.tau, freeze:S.freeze });
+  }
+  function showLive(st){
+    $("lF").textContent = st.f.toFixed(3)+" Hz";
+    $("lFit").textContent = st.ready ? Math.round(st.fit*100)+"%" : "Locking…";
+    $("lLvl").textContent = st.lvl.toFixed(0).replace("-","−");
+    if (live) live.f = st.f;
+  }
+  $("speed").addEventListener("change", e=>{ S.tau = +e.target.value; sendLive(); });
+  $("freeze").addEventListener("change", e=>{ S.freeze = e.target.checked; sendLive(); });
+
+  async function setMode(mode){
+    if (mode === S.mode) return;
+    const was = S.playing;
+    if (was){ S.playing = false; applyMaster(); stopLive(); }
+    S.mode = mode;
+    document.querySelectorAll("#mode button").forEach(b=>b.setAttribute("aria-pressed", String(b.dataset.mode===mode)));
+    $("livePanel").hidden = mode !== "live";
+    $("modeNote").textContent = mode==="live"
+      ? "Keeps listening while you wear headphones and follows the hum's pitch and loudness by itself. Needs the microphone."
+      : "Plays the learned hum shape, inverted. You keep pitch and timing tuned by hand.";
+    document.querySelector('.nudges[data-k="freq"]').classList.toggle("locked", mode==="live");
+    if (ctx) applyToneGain();
+    updateTransport(); syncUI();
+  }
+  $("mode").addEventListener("click", e=>{ const b=e.target.closest("button"); if (b) setMode(b.dataset.mode); });
+
+  function syncUI(){
+    $("freqOut").textContent = S.freq.toFixed(3)+" Hz";
+    $("phase").value = S.phase;
+    $("phaseOut").textContent = `${S.phase.toFixed(1)}° · ${(S.phase/360*1000/S.freq).toFixed(2)} ms` + (live ? ` + ${(live.lat*1000).toFixed(0)} ms delay fix` : "");
+    $("level").value = S.level; $("levelOut").textContent = S.level.toFixed(1).replace("-","−")+" dB";
+    if (S.model){ $("harmN").max = S.model.a.length-1; $("harmN").value = S.K; $("harmOut").textContent = S.K===1 ? "Fundamental only" : `${S.K} harmonics`; }
+  }
+  function updateTransport(){
+    $("startBtn").textContent = S.playing ? "Stop anti-wave" : "Start anti-wave";
+    $("compareBtn").disabled = !S.playing;
+    $("status").classList.toggle("on", S.playing && !comparing);
+    $("statusText").textContent = !S.playing ? (ctx ? "Stopped (tuning kept)" : "Stopped") : (comparing ? "Muted while held" : (S.mode==="live" ? "Live tracking" : "Playing"));
+  }
+  $("startBtn").addEventListener("click", async ()=>{
+    ensureCtx(); try{ await ctx.resume(); }catch(e){}
+    if (!S.playing && S.mode==="live"){
+      $("startBtn").disabled = true;
+      const ok = await startLive();
+      $("startBtn").disabled = false;
+      if (!ok) return;
+    } else if (S.playing && S.mode==="live"){ stopLive(); }
+    S.playing = !S.playing; applyMaster(); updateTransport(); syncUI();
+    if (S.playing && navigator.wakeLock){ try{ wakeLock = await navigator.wakeLock.request("screen"); }catch(e){ wakeLock=null; } }
+    else if (wakeLock){ try{ wakeLock.release(); }catch(e){} wakeLock=null; }
+  });
+  const holdOn = e=>{ if ($("compareBtn").disabled) return; e.preventDefault(); comparing=true; applyMaster(); updateTransport(); };
+  const holdOff = ()=>{ if (!comparing) return; comparing=false; applyMaster(); updateTransport(); };
+  $("compareBtn").addEventListener("pointerdown", holdOn);
+  ["pointerup","pointerleave","pointercancel"].forEach(ev=>$("compareBtn").addEventListener(ev, holdOff));
+  $("compareBtn").addEventListener("keydown", e=>{ if (e.key===" "||e.key==="Enter") holdOn(e); });
+  $("compareBtn").addEventListener("keyup", holdOff);
+  $("master").addEventListener("input", e=>{ S.master = e.target.value/100; $("masterOut").textContent = e.target.value+"%"; applyMaster(); });
+  $("level").addEventListener("input", e=>setLevel(+e.target.value));
+  $("phase").addEventListener("input", e=>setPhase(+e.target.value));
+  $("harmN").addEventListener("input", e=>setK(+e.target.value));
+  document.querySelectorAll(".nudges").forEach(g=>g.addEventListener("click", e=>{
+    const b = e.target.closest("button"); if (!b) return; const d = parseFloat(b.dataset.d);
+    if (g.dataset.k==="level") setLevel(S.level+d);
+    else if (g.dataset.k==="phase") setPhase(S.phase+d);
+    else setFreq(S.freq+d);
+  }));
+
+  // ---------- Analysis ----------
+  function fft(re, im){
+    const n = re.length;
+    for (let i=1,j=0;i<n;i++){ let bit=n>>1; for(;j&bit;bit>>=1) j^=bit; j^=bit;
+      if (i<j){ let t=re[i]; re[i]=re[j]; re[j]=t; t=im[i]; im[i]=im[j]; im[j]=t; } }
+    for (let len=2; len<=n; len<<=1){
+      const half=len>>1, ang=-2*Math.PI/len;
+      for (let k=0;k<half;k++){ const wr=Math.cos(ang*k), wi=Math.sin(ang*k);
+        for (let i=k;i<n;i+=len){ const b=i+half, tr=re[b]*wr-im[b]*wi, ti=re[b]*wi+im[b]*wr;
+          re[b]=re[i]-tr; im[b]=im[i]-ti; re[i]+=tr; im[i]+=ti; } }
+    }
+  }
+  function spectrumPeaks(x, sr){
+    let N = 16384; while (N > x.length && N > 2048) N >>= 1;
+    const win = new Float64Array(N); for (let i=0;i<N;i++) win[i] = 0.5-0.5*Math.cos(2*Math.PI*i/(N-1));
+    const pw = new Float64Array(N/2), re = new Float64Array(N), im = new Float64Array(N);
+    let frames = 0;
+    const frame = s=>{ for (let i=0;i<N;i++){ re[i]=(s+i<x.length?x[s+i]:0)*win[i]; im[i]=0; } fft(re,im);
+      for (let k=0;k<N/2;k++) pw[k]+=re[k]*re[k]+im[k]*im[k]; frames++; };
+    for (let s=0; s+N<=x.length; s+=N/2) frame(s);
+    if (!frames) frame(0);
+    const db = new Float64Array(N/2); for (let k=0;k<N/2;k++) db[k]=10*Math.log10(pw[k]/frames+1e-20);
+    const bin = sr/N, kmin = Math.ceil(18/bin), kmax = Math.min(N/2-2, Math.floor(1000/bin));
+    const vals = Array.from(db.slice(kmin,kmax)).sort((a,b)=>a-b), med = vals[vals.length>>1];
+    const w = Math.max(2, Math.round(3/bin)), peaks = [];
+    for (let k=kmin;k<=kmax;k++){
+      const b = db[k]; if (b < med+10) continue;
+      let ok = true; for (let j=Math.max(1,k-w); j<=Math.min(N/2-2,k+w); j++) if (j!==k && db[j]>b){ ok=false; break; }
+      if (!ok) continue;
+      const a=db[k-1], c=db[k+1], den=a-2*b+c, p = den ? 0.5*(a-c)/den : 0;
+      peaks.push({ f:(k+p)*bin, db:b-0.25*(a-c)*p });
+    }
+    peaks.sort((p,q)=>q.db-p.db);
+    return { peaks, bin };
+  }
+  function foldEnergy(x, sr, f, B){
+    const sum = new Float64Array(B), cnt = new Uint32Array(B), step = f/sr;
+    let ph = 0;
+    for (let i=0;i<x.length;i++){ const k = (ph*B)|0; sum[k]+=x[i]; cnt[k]++; ph+=step; if (ph>=1) ph-=1; }
+    let e = 0; for (let k=0;k<B;k++) if (cnt[k]) { const v=sum[k]/cnt[k]; e+=v*v; }
+    return { e:e/B, sum, cnt };
+  }
+
+  function learn(raw, sr, label, isExample){
+    // Trim to 20 s, high-pass at ~15 Hz to drop DC and rumble
+    const n = Math.min(raw.length, Math.floor(sr*20));
+    const x = new Float32Array(n), rc = 1/(2*Math.PI*15), a = rc/(rc+1/sr);
+    let py=0, px=raw[0]||0;
+    for (let i=0;i<n;i++){ const v=raw[i]; py = a*(py+v-px); px=v; x[i]=py; }
+    const skip = Math.min(Math.floor(sr*0.3), n>>3); const xs = x.subarray(skip);
+    let total = 0; for (let i=0;i<xs.length;i++) total += xs[i]*xs[i]; total /= xs.length;
+
+    const { peaks, bin } = spectrumPeaks(xs, sr);
+    if (!peaks.length || total < 1e-10){ showMsg("No steady hum found. Try listening longer or move the phone closer to the noise.", "err"); return; }
+    // Fundamental: strongest peak, or a sub-multiple of it that is also present
+    let f0 = peaks[0].f; const ref = peaks[0].db, tol = Math.max(1.5, bin*1.2);
+    for (const d of [4,3,2]){
+      const cand = peaks[0].f/d; if (cand < 18) continue;
+      if (peaks.some(p=>Math.abs(p.f-cand)<tol && p.db > ref-30)){ f0 = cand; break; }
+    }
+    // Refine pitch by maximizing the energy of the period-folded signal
+    const xr = xs.subarray(0, Math.min(xs.length, Math.floor(sr*10)));
+    const search = (lo, hi, st)=>{ let best=f0, be=-1; for (let f=lo; f<=hi; f+=st){ const {e}=foldEnergy(xr,sr,f,96); if (e>be){ be=e; best=f; } } return best; };
+    f0 = search(f0-1.2, f0+1.2, 0.02);
+    f0 = search(f0-0.03, f0+0.03, 0.001);
+
+    // Learn one cycle at full length and higher resolution
+    const B = 512, { sum, cnt } = foldEnergy(xs, sr, f0, B);
+    const W = new Float64Array(B); let mean = 0;
+    for (let k=0;k<B;k++){ W[k] = cnt[k] ? sum[k]/cnt[k] : 0; mean += W[k]; } mean/=B;
+    let periodic = 0; for (let k=0;k<B;k++){ W[k]-=mean; periodic += W[k]*W[k]; } periodic/=B;
+
+    const H = Math.max(1, Math.min(24, Math.floor(1500/f0)));
+    const A = new Float64Array(H+1), Bc = new Float64Array(H+1), amp = new Float64Array(H+1);
+    for (let h=1; h<=H; h++){
+      let sa=0, sb=0; for (let k=0;k<B;k++){ const t=2*Math.PI*h*k/B; sa+=W[k]*Math.cos(t); sb+=W[k]*Math.sin(t); }
+      A[h]=2*sa/B; Bc[h]=2*sb/B; amp[h]=Math.hypot(A[h],Bc[h]);
+    }
+    const ampMax = Math.max(...amp.slice(1));
+    let strong = 0, lastStrong = 1;
+    for (let h=1; h<=H; h++) if (20*Math.log10(amp[h]/ampMax+1e-12) > -30){ strong++; lastStrong = h; }
+    let peak = 0; for (let k=0;k<B;k++) peak = Math.max(peak, Math.abs(W[k]));
+
+    let hs = 1; for (let h=2; h<=H; h++) if (amp[h] > amp[hs]) hs = h;
+    S.model = { a:A, b:Bc, amp, peak: peak||1, W, f0, hs, ratio: clamp(periodic/total,0,1), strong, label, isExample };
+    S.K = Math.min(lastStrong, 6);
+    S.phase = 0;
+    setFreq(f0);
+    $("sF0").textContent = f0.toFixed(2)+" Hz";
+    $("sPer").textContent = Math.round(S.model.ratio*100)+"%";
+    $("sH").textContent = String(strong);
+    showMsg(label, isExample ? "example" : "");
+    if (live) live.post({ type:"init", f:f0, hs, KM:Math.min(32, H) });
+    refreshWave(); drawHarm(); sendLive(); syncUI();
+  }
+  function showMsg(t, cls){ const m=$("msg"); m.textContent=t; m.className="msg"+(cls?" "+cls:""); }
+
+  // ---------- Listening ----------
+  let listening = false;
+  $("listenBtn").addEventListener("click", async ()=>{
+    if (listening) return;
+    if (live){ showMsg("Stop Live tracking first. It's already using the mic.", "err"); return; }
+    if (!window.isSecureContext){ showMsg("The mic only works on an https:// page. Host this file on HTTPS, or use Open recording.", "err"); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ showMsg("This browser can't use the mic here. Use Open recording instead.", "err"); return; }
+    let stream;
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1 } });
+    }catch(err){
+      showMsg(err && err.name==="NotAllowedError" ? "Microphone access was blocked. Allow it in your browser's site settings, or use Open recording." : "Couldn't open the microphone. Use Open recording instead.", "err");
+      return;
+    }
+    ensureCtx(); try{ await ctx.resume(); }catch(e){}
+    const wasPlaying = S.playing; S.playing = false; applyMaster(); updateTransport();
+    listening = true; $("listenBtn").disabled = true;
+    const secs = +$("dur").value, sr = ctx.sampleRate, chunks = [];
+    const src = ctx.createMediaStreamSource(stream);
+    const proc = ctx.createScriptProcessor(4096, 1, 1);
+    const sink = ctx.createGain(); sink.gain.value = 0; sink.connect(ctx.destination);
+    let got = 0;
+    proc.onaudioprocess = e=>{
+      const d = e.inputBuffer.getChannelData(0); chunks.push(new Float32Array(d)); got += d.length;
+      let pk=0; for (let i=0;i<d.length;i++) pk=Math.max(pk,Math.abs(d[i]));
+      $("meter").style.width = Math.min(100, got/(secs*sr)*100)+"%";
+      $("listenBtn").textContent = `Listening… ${Math.max(0, Math.ceil(secs - got/sr))} s`;
+      showMsg(`Listening. Input level ${pk>0?(20*Math.log10(pk)).toFixed(0):"−∞"} dBFS. Stay quiet.`);
+    };
+    src.connect(proc); proc.connect(sink);
+    await new Promise(r=>{ const t = setInterval(()=>{ if (got >= secs*sr){ clearInterval(t); r(); } }, 100); });
+    proc.disconnect(); src.disconnect(); sink.disconnect(); stream.getTracks().forEach(t=>t.stop());
+    const all = new Float32Array(got); let o=0; for (const c of chunks){ all.set(c,o); o+=c.length; }
+    $("listenBtn").textContent = "Listen"; $("listenBtn").disabled = false; listening = false;
+    showMsg("Learning the hum…");
+    setTimeout(()=>{ learn(all, sr, `Learned from ${secs} s of mic audio.`, false); if (wasPlaying){ S.playing = true; applyMaster(); updateTransport(); } }, 30);
+  });
+
+  $("rec").addEventListener("change", async e=>{
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    showMsg(`Reading ${file.name}…`);
+    try{
+      const buf = await file.arrayBuffer();
+      const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      const oc = new OAC(1, 44100, 44100);
+      const audio = await new Promise((res,rej)=>{ const p = oc.decodeAudioData(buf, res, rej); if (p && p.then) p.then(res,rej); });
+      const ch = audio.numberOfChannels, len = audio.length, mono = new Float32Array(len);
+      for (let c=0;c<ch;c++){ const d=audio.getChannelData(c); for (let i=0;i<len;i++) mono[i]+=d[i]/ch; }
+      $("meter").style.width = "100%";
+      setTimeout(()=>learn(mono, audio.sampleRate, `Learned from ${file.name} (${Math.min(20,len/audio.sampleRate).toFixed(1)} s).`, false), 20);
+    }catch(err){ showMsg("Couldn't read that file. Try an .m4a, .mp3 or .wav recording.", "err"); }
+    e.target.value = "";
+  });
+
+  function example(){
+    const sr = 44100, n = sr*8, x = new Float32Array(n);
+    let seed = 11; const rnd = ()=>((seed=(seed*16807)%2147483647)/2147483647)*2-1;
+    for (let i=0;i<n;i++){ const t=i/sr, w=2*Math.PI*50.04*t;
+      x[i] = 0.45*Math.sin(w) + 0.3*Math.sin(2*w+0.9) + 0.14*Math.sin(3*w+2.1) + 0.06*Math.sin(5*w+0.4) + 0.12*rnd(); }
+    $("meter").style.width = "100%";
+    learn(x, sr, "Example: a simulated 50 Hz mains hum with some random noise, not your room. Press Listen to learn your own.", true);
+  }
+  $("exampleBtn").addEventListener("click", example);
+
+  // ---------- Drawing ----------
+  function tok(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function prep(cv){ const dpr=window.devicePixelRatio||1, W=cv.clientWidth, H=cv.clientHeight; if(!W) return null;
+    cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr); const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,W,H); return {g,W,H}; }
+  function drawWave(){
+    const m = S.model; if (!m) return; const c = prep($("wave")); if (!c) return; const {g,W,H} = c;
+    const line=tok("--line"), ink=tok("--ink"), acc=tok("--accent"), pad=10, mid=H/2, sc=(H/2-pad);
+    g.strokeStyle=line; g.lineWidth=1; g.beginPath(); g.moveTo(0,mid+.5); g.lineTo(W,mid+.5); g.moveTo(W/2+.5,pad); g.lineTo(W/2+.5,H-pad); g.stroke();
+    const B = m.W.length, pts = 2*B;
+    g.strokeStyle=ink; g.lineWidth=1.6; g.setLineDash([]); g.beginPath();
+    for (let i=0;i<=pts;i++){ const v=m.W[i%B]/m.peak, X=i/pts*W, Y=mid - v*sc; i?g.lineTo(X,Y):g.moveTo(X,Y); } g.stroke();
+    const {re,im} = antiCoeffs();
+    g.strokeStyle=acc; g.lineWidth=1.8; g.setLineDash([5,4]); g.beginPath();
+    for (let i=0;i<=pts;i++){ const th=2*Math.PI*i/B; let v=0; for (let h=1;h<re.length;h++) v+=re[h]*Math.cos(h*th)+im[h]*Math.sin(h*th);
+      const X=i/pts*W, Y=mid - clamp(v,-1.4,1.4)*sc; i?g.lineTo(X,Y):g.moveTo(X,Y); } g.stroke(); g.setLineDash([]);
+  }
+  function drawHarm(){
+    const m = S.model; if (!m) return; const c = prep($("harm")); if (!c) return; const {g,W,H} = c;
+    const H1 = m.amp.length-1, show = Math.min(H1, 12), ax=tok("--muted"), acc=tok("--accent"), line=tok("--line");
+    const padB=18, padT=8, gap=4, bw=(W-gap*(show+1))/show, max=Math.max(...m.amp.slice(1));
+    g.font=`10px ${tok("--mono")}`; g.textAlign="center";
+    for (let h=1; h<=show; h++){
+      const dbv = 20*Math.log10(m.amp[h]/max+1e-12), frac = clamp((dbv+50)/50,0,1), bh=frac*(H-padB-padT), X=gap+(h-1)*(bw+gap);
+      if (h<=S.K){ g.fillStyle=acc; g.fillRect(X, H-padB-bh, bw, bh); }
+      else { g.strokeStyle=line; g.lineWidth=1; g.strokeRect(X+.5, H-padB-bh+.5, bw-1, Math.max(0,bh-1)); }
+      g.fillStyle=ax; g.fillText(String(h), X+bw/2, H-5);
+    }
+  }
+  const ro = new ResizeObserver(()=>{ drawWave(); drawHarm(); }); ro.observe($("wave")); ro.observe($("harm"));
+  const redraw = ()=>{ drawWave(); drawHarm(); };
+  try{ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redraw); }catch(e){}
+  new MutationObserver(redraw).observe(document.documentElement, {attributes:true, attributeFilter:["data-theme"]});
+
+  updateTransport(); example();
+})();
+</script>
+
+</body>
+</html>
